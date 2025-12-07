@@ -1,1 +1,1 @@
-web: gunicorn app:app -k uvicorn.workers.UvicornWorker
+web: gunicorn app.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 120 --keep-alive 5 --max-requests 1000 --max-requests-jitter 100 --log-level info --access-logfile - --error-logfile -
