@@ -410,6 +410,48 @@ class SimulationService:
             "created_at": what_if.created_at,
         }
     
+    async def list_sessions(
+        self,
+        status: Optional[str] = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> Dict[str, Any]:
+        """
+        List all simulation sessions.
+        
+        Args:
+            status: Optional status filter
+            limit: Maximum number of sessions to return
+            offset: Number of sessions to skip
+            
+        Returns:
+            Dictionary with simulations list and total count
+        """
+        sessions = await self.sessions.list_sessions(
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+        
+        simulations = []
+        for session in sessions:
+            simulations.append({
+                "session_id": session.id,
+                "name": session.name,
+                "description": session.description,
+                "scenario": session.scenario,
+                "status": session.status,
+                "current_turn": session.current_turn,
+                "max_turns": session.max_turns,
+                "created_at": session.created_at if session.created_at else datetime.utcnow(),
+                "updated_at": session.updated_at if session.updated_at else datetime.utcnow(),
+            })
+        
+        return {
+            "simulations": simulations,
+            "total": len(simulations),
+        }
+    
     async def get_session_state(self, session_id: UUID) -> Dict[str, Any]:
         """Get the current state of a simulation session."""
         session = await self.sessions.get_by_id(

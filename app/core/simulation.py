@@ -27,6 +27,7 @@ from app.models.schemas import (
     SimulationNextRequest,
     SimulationNextResponse,
     SimulationStateResponse,
+    SimulationListResponse,
     WhatIfRequest,
     WhatIfResponse,
     ErrorResponse,
@@ -210,6 +211,42 @@ async def analyze_what_if(
         )
     except Exception as e:
         logger.error(f"Failed to analyze what-if: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e),
+        )
+
+
+@router.get(
+    "/simulations",
+    response_model=SimulationListResponse,
+    responses={
+        500: {"model": ErrorResponse, "description": "Internal error"},
+    },
+)
+async def list_simulations(
+    status: Optional[str] = Query(None, description="Filter by status"),
+    limit: int = Query(100, ge=1, le=500, description="Maximum number of simulations"),
+    offset: int = Query(0, ge=0, description="Number of simulations to skip"),
+    service: SimulationService = Depends(get_simulation_service),
+) -> SimulationListResponse:
+    """
+    List all simulation sessions.
+    
+    Returns a list of all simulations with their basic information.
+    Can be filtered by status and paginated.
+    """
+    try:
+        result = await service.list_sessions(
+            status=status,
+            limit=limit,
+            offset=offset,
+        )
+        logger.info(f"Listed {result.get('total', 0)} simulations")
+        return SimulationListResponse(**result)
+        
+    except Exception as e:
+        logger.error(f"Failed to list simulations: {e}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e),

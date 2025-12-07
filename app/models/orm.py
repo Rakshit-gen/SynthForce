@@ -311,6 +311,7 @@ class AgentMemory(Base, TimestampMixin):
             "content": self.content,
             "importance": self.importance,
             "access_count": self.access_count,
+            "created_at": self.created_at.isoformat() if self.created_at else None,
             "last_accessed_at": self.last_accessed_at.isoformat() if self.last_accessed_at else None,
             "expires_at": self.expires_at.isoformat() if self.expires_at else None,
         }

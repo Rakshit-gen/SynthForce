@@ -314,6 +314,27 @@ class SimulationStateResponse(BaseSchema):
     updated_at: datetime
 
 
+class SimulationListItem(BaseSchema):
+    """Simulation list item (simplified for listing)."""
+    
+    session_id: UUID
+    name: Optional[str]
+    description: Optional[str]
+    scenario: str
+    status: SessionStatus
+    current_turn: int
+    max_turns: int
+    created_at: datetime
+    updated_at: datetime
+
+
+class SimulationListResponse(BaseSchema):
+    """Response for listing simulations."""
+    
+    simulations: List[SimulationListItem]
+    total: int
+
+
 # =============================================================================
 # What-If Schemas
 # =============================================================================
