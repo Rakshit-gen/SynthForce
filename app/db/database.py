@@ -7,6 +7,7 @@ Provides async SQLAlchemy engine, session factory, and connection utilities.
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator, Optional
+from urllib.parse import urlparse, parse_qs, urlencode, urlunparse
 
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
@@ -26,6 +27,54 @@ _engine: Optional[AsyncEngine] = None
 _session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
 
+def _normalize_database_url(url: str) -> tuple[str, dict]:
+    """
+    Normalize database URL by converting sslmode to asyncpg-compatible SSL config.
+    
+    asyncpg doesn't support 'sslmode' query parameter. Instead, it uses 'ssl' 
+    parameter in connect_args. This function:
+    1. Parses the URL and extracts sslmode
+    2. Removes sslmode from query string
+    3. Returns normalized URL and SSL config for connect_args
+    
+    Returns:
+        tuple: (normalized_url, connect_args_dict)
+    """
+    parsed = urlparse(url)
+    query_params = parse_qs(parsed.query)
+    
+    # Extract sslmode if present
+    sslmode = None
+    if "sslmode" in query_params:
+        sslmode = query_params.pop("sslmode")[0].lower()
+    
+    # Remove sslmode from query string
+    new_query = urlencode(query_params, doseq=True)
+    normalized_url = urlunparse((
+        parsed.scheme,
+        parsed.netloc,
+        parsed.path,
+        parsed.params,
+        new_query,
+        parsed.fragment
+    ))
+    
+    # Convert sslmode to asyncpg ssl parameter
+    connect_args = {}
+    if sslmode:
+        # asyncpg expects ssl=True/False or an SSL context
+        # sslmode values: disable, allow, prefer, require, verify-ca, verify-full
+        if sslmode in ("require", "prefer", "verify-ca", "verify-full"):
+            connect_args["ssl"] = True
+        elif sslmode == "disable":
+            connect_args["ssl"] = False
+        # For allow, we'll default to False (asyncpg doesn't have exact equivalent)
+        elif sslmode == "allow":
+            connect_args["ssl"] = False
+    
+    return normalized_url, connect_args
+
+
 def get_engine() -> AsyncEngine:
     """
     Get or create the async database engine.
@@ -37,11 +86,18 @@ def get_engine() -> AsyncEngine:
     if _engine is None:
         settings = get_settings()
         
+        # Normalize database URL and extract SSL config
+        db_url, connect_args = _normalize_database_url(settings.database.url)
+        
         # Engine configuration based on environment
         engine_kwargs = {
             "echo": settings.database.echo or settings.debug,
             "future": True,
         }
+        
+        # Add SSL configuration if present
+        if connect_args:
+            engine_kwargs["connect_args"] = connect_args
         
         if settings.is_production:
             # Use connection pooling in production
@@ -57,15 +113,16 @@ def get_engine() -> AsyncEngine:
             engine_kwargs["poolclass"] = NullPool
         
         _engine = create_async_engine(
-            settings.database.url,
+            db_url,
             **engine_kwargs
         )
         
         logger.info(
             f"Database engine created",
             extra={
-                "database_url": settings.database.url.split("@")[-1],  # Hide credentials
+                "database_url": db_url.split("@")[-1] if "@" in db_url else db_url,  # Hide credentials
                 "environment": settings.environment,
+                "ssl_enabled": connect_args.get("ssl", False) if connect_args else False,
             }
         )
     
