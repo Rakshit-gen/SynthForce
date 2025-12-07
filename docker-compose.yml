@@ -1,0 +1,161 @@
+# =============================================================================
+# Synthetic Workforce Simulator - Docker Compose Configuration
+# =============================================================================
+# Run: docker-compose up --build
+
+version: '3.8'
+
+services:
+  # ---------------------------------------------------------------------------
+  # Application Service
+  # ---------------------------------------------------------------------------
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: development
+    container_name: workforce-simulator-app
+    ports:
+      - "8000:8000"
+    environment:
+      # Application
+      - ENVIRONMENT=development
+      - DEBUG=true
+      - LOG_LEVEL=DEBUG
+      
+      # Database
+      - DATABASE_URL=postgresql+asyncpg://postgres:postgres@db:5432/workforce_simulator
+      
+      # Redis
+      - REDIS_URL=redis://redis:6379/0
+      
+      # Groq API (set in .env file)
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GROQ_MODEL=llama-3.3-70b-versatile
+      - GROQ_MAX_TOKENS=2048
+      - GROQ_TEMPERATURE=0.7
+      
+      # Rate Limiting
+      - RATE_LIMIT_REQUESTS=100
+      - RATE_LIMIT_WINDOW=60
+      
+      # CORS
+      - CORS_ORIGINS=http://localhost:3000,http://localhost:8080,http://localhost:5173
+      
+    volumes:
+      - ./app:/app/app:ro
+      - ./scripts:/app/scripts:ro
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - workforce-network
+
+  # ---------------------------------------------------------------------------
+  # PostgreSQL Database
+  # ---------------------------------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: workforce-simulator-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=workforce_simulator
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - workforce-network
+
+  # ---------------------------------------------------------------------------
+  # Redis Cache
+  # ---------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: workforce-simulator-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - workforce-network
+
+  # ---------------------------------------------------------------------------
+  # pgAdmin (Optional - for database management)
+  # ---------------------------------------------------------------------------
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: workforce-simulator-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@example.com
+      - PGADMIN_DEFAULT_PASSWORD=admin
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+    profiles:
+      - tools
+    networks:
+      - workforce-network
+
+  # ---------------------------------------------------------------------------
+  # Redis Commander (Optional - for Redis management)
+  # ---------------------------------------------------------------------------
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: workforce-simulator-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    ports:
+      - "8081:8081"
+    depends_on:
+      - redis
+    profiles:
+      - tools
+    networks:
+      - workforce-network
+
+# =============================================================================
+# Volumes
+# =============================================================================
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  workforce-network:
+    driver: bridge

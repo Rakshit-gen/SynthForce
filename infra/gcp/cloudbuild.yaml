@@ -1,0 +1,87 @@
+# Cloud Build configuration for GCP deployment
+# Triggered on push to main branch or manually
+
+steps:
+  # Step 1: Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'build'
+    args:
+      - 'build'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/workforce-simulator:$COMMIT_SHA'
+      - '-t'
+      - 'gcr.io/$PROJECT_ID/workforce-simulator:latest'
+      - '--target'
+      - 'production'
+      - '-f'
+      - 'Dockerfile'
+      - '.'
+
+  # Step 2: Push the Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/workforce-simulator:$COMMIT_SHA'
+
+  - name: 'gcr.io/cloud-builders/docker'
+    id: 'push-latest'
+    args:
+      - 'push'
+      - 'gcr.io/$PROJECT_ID/workforce-simulator:latest'
+
+  # Step 3: Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    id: 'deploy'
+    entrypoint: 'gcloud'
+    args:
+      - 'run'
+      - 'deploy'
+      - 'workforce-simulator'
+      - '--image'
+      - 'gcr.io/$PROJECT_ID/workforce-simulator:$COMMIT_SHA'
+      - '--region'
+      - '${_REGION}'
+      - '--platform'
+      - 'managed'
+      - '--allow-unauthenticated'
+      - '--memory'
+      - '2Gi'
+      - '--cpu'
+      - '2'
+      - '--min-instances'
+      - '1'
+      - '--max-instances'
+      - '10'
+      - '--timeout'
+      - '300'
+      - '--concurrency'
+      - '80'
+      - '--port'
+      - '8000'
+      - '--set-env-vars'
+      - 'ENVIRONMENT=production,LOG_LEVEL=INFO,WORKERS=4'
+      - '--set-secrets'
+      - 'GROQ_API_KEY=groq-api-key:latest,DATABASE_URL=database-url:latest,REDIS_URL=redis-url:latest'
+
+# Store images in Container Registry
+images:
+  - 'gcr.io/$PROJECT_ID/workforce-simulator:$COMMIT_SHA'
+  - 'gcr.io/$PROJECT_ID/workforce-simulator:latest'
+
+# Substitution variables
+substitutions:
+  _REGION: 'us-central1'
+
+# Build options
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: 'E2_HIGHCPU_8'
+
+# Build timeout
+timeout: '1800s'
+
+# Tags for filtering
+tags:
+  - 'workforce-simulator'
+  - 'cloud-run'
